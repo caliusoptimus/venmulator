@@ -5,6 +5,9 @@
     "@caliusoptimus"
   ],
   "config_flow": true,
+  "dependencies": [
+    "network"
+  ],
   "documentation": "https://github.com/caliusoptimus/venmulator",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/caliusoptimus/venmulator/issues",

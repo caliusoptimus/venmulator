@@ -48,8 +48,6 @@ from .const import (
     SENSOR_TYPE_NAME_TO_VALUE,
     STORAGE_VERSION,
 )
-
-_LOGGER = logging.getLogger(__name__)
 from .protocol import (
     build_info,
     build_message,
@@ -59,6 +57,8 @@ from .protocol import (
     normalize_mac,
     temp_c_to_index,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass

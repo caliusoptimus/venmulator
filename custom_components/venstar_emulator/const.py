@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from .coordinator import VenstarCoordinator
+    from .runtime import VenstarRuntime
 
 DOMAIN: Final = "venstar_emulator"
 
@@ -54,5 +58,5 @@ SENSOR_TYPE_VALUE_TO_NAME: Final = {v: k for k, v in SENSOR_TYPE_NAME_TO_VALUE.i
 class IntegrationData:
     """Runtime objects associated with a config entry."""
 
-    runtime: "VenstarRuntime"
-    coordinator: "VenstarCoordinator"
+    runtime: VenstarRuntime
+    coordinator: VenstarCoordinator
