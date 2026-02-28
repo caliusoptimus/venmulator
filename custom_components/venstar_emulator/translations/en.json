@@ -1,0 +1,121 @@
+{
+  "title": "Venstar WiFi Sensor Emulator",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add emulated Venstar sensor",
+        "description": "Creates one emulated WiFi sensor. After these fields, pairing is required before the sensor entry is created.",
+        "data": {
+          "name": "Entry Name",
+          "source_interface": "Source Interface",
+          "source_ip": "Source IP (Optional Fallback, CIDR)",
+          "sensor_name": "Sensor Name",
+          "unit_id": "Unit ID",
+          "sensor_type": "Sensor Type",
+          "temperature_unit": "Temperature Unit",
+          "update_interval_sec": "Update Interval (Seconds)",
+          "temperature_entity": "Temperature Source Entity"
+        }
+      },
+      "pair_ready": {
+        "title": "Ready to pair?",
+        "description": "Place the thermostat in wireless sensor pairing mode, then press Pair.",
+        "menu_options": {
+          "pair_start": "Pair"
+        }
+      },
+      "pairing_active": {
+        "title": "Pairing in progress",
+        "description": "Pairing packets are being sent. Remaining timeout: {remaining_seconds}s.",
+        "menu_options": {
+          "pair_success": "Pairing Successful",
+          "pair_cancel": "Cancel Pairing"
+        }
+      },
+      "pair_start": {
+        "title": "Pair"
+      },
+      "pair_success": {
+        "title": "Pairing Successful"
+      },
+      "pair_cancel": {
+        "title": "Cancel Pairing"
+      },
+      "pair_timeout": {
+        "title": "Pairing timed out",
+        "description": "No confirmation received before timeout.",
+        "menu_options": {
+          "pair_start": "Pair Again",
+          "pair_cancel": "Cancel Pairing"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure emulated sensor",
+        "description": "Only non-identity fields are editable after creation.",
+        "data": {
+          "name": "Entry Name",
+          "temperature_unit": "Temperature Unit",
+          "update_interval_sec": "Update Interval (Seconds)",
+          "temperature_entity": "Temperature Source Entity"
+        }
+      }
+    },
+    "error": {
+      "invalid_source_ip": "Invalid source IP CIDR format",
+      "source_required": "Set source interface or source IP fallback",
+      "sensor_name_required": "Sensor Name is required",
+      "sensor_name_too_long": "Sensor Name must be 14 UTF-8 bytes or less",
+      "unit_id_in_use": "Unit ID is already in use by another emulated sensor",
+      "cannot_generate_mac": "Could not generate a unique sensor MAC"
+    },
+    "abort": {
+      "reconfigure_successful": "Configuration updated",
+      "reconfigure_entry_not_found": "Entry not found",
+      "pairing_context_missing": "Pairing context missing. Restart setup."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit emulated sensor",
+        "data": {
+          "name": "Entry Name",
+          "temperature_unit": "Temperature Unit",
+          "update_interval_sec": "Update Interval (Seconds)",
+          "temperature_entity": "Temperature Source Entity"
+        }
+      }
+    },
+    "error": {
+      "invalid_source_ip": "Invalid source IP CIDR format",
+      "source_required": "Set source interface or source IP fallback",
+      "sensor_name_required": "Sensor Name is required",
+      "sensor_name_too_long": "Sensor Name must be 14 UTF-8 bytes or less",
+      "unit_id_in_use": "Unit ID is already in use by another emulated sensor",
+      "cannot_generate_mac": "Could not generate a unique sensor MAC"
+    }
+  },
+  "selector": {
+    "sensor_type": {
+      "options": {
+        "outdoor": "Outdoor",
+        "return": "Return",
+        "remote": "Remote",
+        "supply": "Supply"
+      }
+    },
+    "temperature_unit": {
+      "options": {
+        "celsius": "Celsius",
+        "fahrenheit": "Fahrenheit"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "emulated_temperature": {
+        "name": "Emulated Temperature"
+      }
+    }
+  }
+}
