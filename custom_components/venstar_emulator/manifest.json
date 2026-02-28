@@ -1,7 +1,7 @@
 {
   "domain": "venstar_emulator",
   "name": "Venstar WiFi Sensor Emulator",
-  "version": "1.0",
+  "version": "1.01",
   "documentation": "https://github.com/caliusoptimus/venmulator",
   "issue_tracker": "https://github.com/caliusoptimus/venmulator/issues",
   "config_flow": true,

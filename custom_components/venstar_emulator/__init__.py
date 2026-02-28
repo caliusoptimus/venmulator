@@ -5,8 +5,9 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.storage import Store
 
-from .const import IntegrationData, PLATFORMS
+from .const import DOMAIN, IntegrationData, PLATFORMS, STORAGE_VERSION
 from .coordinator import VenstarCoordinator
 from .runtime import VenstarRuntime
 
@@ -52,3 +53,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok and runtime is not None:
         await runtime.async_shutdown()
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove persisted storage for a deleted config entry."""
+    await Store[dict](hass, STORAGE_VERSION, f"{DOMAIN}_{entry.entry_id}").async_remove()

@@ -2,6 +2,10 @@
 
 This integration emulates a Venstar `ACC-TSENWIFI` wireless sensor so a compatible Venstar thermostat can pair with it and receive temperature updates from Home Assistant.
 
+## Related Projects
+
+- Receiver counterpart (`venceiver`): https://github.com/caliusoptimus/venceiver
+
 ## Tested Hardware
 
 - Thermostat tested: `Venstar T8850` (ColorTouch family)
@@ -122,5 +126,4 @@ You can change:
 Identity fields remain fixed after setup (MAC, unit ID, sensor type, source interface/source IP, sensor key).
 
 No charge, no refunds. Will try to fix it if it breaks.
-
 

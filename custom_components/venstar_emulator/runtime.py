@@ -97,6 +97,7 @@ class VenstarRuntime:
     LEGACY_CONF_BROADCAST_SUBNET = "broadcast_subnet"
     VENSTAR_MULTICAST_TARGET = "224.0.0.1"
     VENSTAR_UDP_PORT = 5001
+    PERIODIC_FAILURE_LOG_INTERVAL_SEC = 60
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
@@ -113,6 +114,8 @@ class VenstarRuntime:
         self._last_temp_c: float | None = None
         self._update_unsub: CALLBACK_TYPE | None = None
         self._update_start_unsub: CALLBACK_TYPE | None = None
+        self._last_periodic_failure_log: datetime | None = None
+        self._suppressed_periodic_failures: int = 0
 
         self._rng = random.Random()
 
@@ -258,7 +261,28 @@ class VenstarRuntime:
         try:
             await self.async_simulate_update_packet()
         except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Periodic update send failed: %s", err)
+            should_log = False
+            if self._last_periodic_failure_log is None:
+                should_log = True
+            else:
+                elapsed = (now - self._last_periodic_failure_log).total_seconds()
+                if elapsed >= self.PERIODIC_FAILURE_LOG_INTERVAL_SEC:
+                    should_log = True
+
+            if should_log:
+                suppressed = self._suppressed_periodic_failures
+                self._suppressed_periodic_failures = 0
+                self._last_periodic_failure_log = now
+                if suppressed:
+                    _LOGGER.warning(
+                        "Periodic update send failed: %s (%s similar failures suppressed)",
+                        err,
+                        suppressed,
+                    )
+                else:
+                    _LOGGER.warning("Periodic update send failed: %s", err)
+            else:
+                self._suppressed_periodic_failures += 1
 
     def _periodic_phase_offset_seconds(self, interval_seconds: int) -> int:
         """Deterministically stagger sensor update loops across entries."""
