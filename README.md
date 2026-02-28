@@ -1,23 +1,62 @@
-# Venmulator (Home Assistant Venstar Sensor Emulator)
+# Venstar WiFi Sensor Emulator - User Guide
 
-This integration emulates a Venstar `ACC-TSENWIFI` wireless sensor so a Venstar ColorTouch thermostat (including `T8850`) can pair with it and receive periodic temperature updates.
+This integration emulates a Venstar `ACC-TSENWIFI` wireless sensor so a compatible Venstar thermostat can pair with it and receive temperature updates from Home Assistant.
+
+## Tested Hardware
+
+- Thermostat tested: `Venstar T8850` (ColorTouch family)
 
 ## What It Does
 
-1. Creates one emulated wireless sensor per integration entry.
-2. Runs a pairing flow in Home Assistant.
-3. Sends Venstar sensor packets on UDP/5001 to:
-   1. `224.0.0.1`
-   2. The directed broadcast of the selected interface subnet
-4. Sends timed update packets after pairing is confirmed.
-5. Persists sensor key and sequence state across HA restarts.
+- Creates one emulated wireless sensor per integration entry
+- Broadcasts sensor packets on your local network
+- Lets you drive sensor temperature from a Home Assistant entity (optional)
+- Keeps sensor identity/state persistent across Home Assistant restarts
+
+## Basic Setup
+
+1. Install the integration with HACS.
+2. Add the integration in Home Assistant.
+3. Fill in setup fields (name, unit ID, type, network source, update interval).
+4. Start pairing from Home Assistant.
+5. Put thermostat in wireless sensor pairing mode and complete pairing.
+
+## Notes on Temperature Units
+
+- Venstar wireless sensor protocol is native Celsius.
+- Fahrenheit values are converted before transmission, so rounding will occur.
+
+## Behavior Observed During Testing
+
+- Single sensor on a thermostat worked reliably.
+- Multiple thermostats on the same network, with one emulated sensor per thermostat, worked without issues.
+- Strange behavior was observed when using more than one emulated sensor on a single thermostat (tested on T8850).
+
+## Recommendation
+
+- For best stability, use one emulated sensor per thermostat.
+- If you need more than one sensor on the same thermostat, validate behavior on your exact thermostat model/firmware.
+
+## Use Case Example
+
+- Combine multiple Zigbee room temperature sensors in Home Assistant (for example, average living room + hallway + bedroom).
+- Feed that computed average into this integration as the thermostat sensor source.
+- Use an error+gain control factor in Home Assistant to adjust the thermostat setpoint through the official Venstar integration.
+- Result: tighter whole-space temperature control than relying only on the thermostat's local sensor.
+
+
+
+
+
 
 ## Requirements
 
-1. Home Assistant with HACS.
-2. Venstar thermostat that supports wireless sensors (`T8850` / ColorTouch family).
-3. Thermostat and Home Assistant on the same reachable Layer-2/LAN path.
-4. Thermostat firmware compatible with wireless sensor support.
+1. Venstar thermostat that supports wireless sensors (`T8850` / ColorTouch family).
+2. Thermostat and Home Assistant on the same reachable Layer-2/LAN path.
+
+## Install Without HACS
+
+1. Copy the custom_components folder to the Home Assistant directory containing "configuration.yaml".
 
 ## Install With HACS (Custom Repository)
 
@@ -56,7 +95,7 @@ This integration emulates a Venstar `ACC-TSENWIFI` wireless sensor so a Venstar 
 3. `Source IP (Optional Fallback, CIDR)`
    1. Optional fallback source IP and prefix (example: `192.168.1.100/24`).
 4. `Sensor Name`
-   1. Name carried inside Venstar packets during pairing/updates.
+   1. Name displayed on thermostat.
 5. `Unit ID`
    1. Sensor unit number (must be `1` to `20`).
 6. `Sensor Type`
@@ -69,8 +108,7 @@ This integration emulates a Venstar `ACC-TSENWIFI` wireless sensor so a Venstar 
 9. `Temperature Source Entity` (optional)
    1. If set, this entity drives transmitted temperature.
    2. If empty, emulator sends random values.
-10. Pairing timeout
-   1. Fixed at `5` minutes.
+
 
 ## Reconfigure (After Creation)
 
@@ -83,29 +121,6 @@ You can change:
 
 Identity fields remain fixed after setup (MAC, unit ID, sensor type, source interface/source IP, sensor key).
 
-## Data and Persistence
+No charge, no refunds. Will try to fix it if it breaks.
 
-1. Key protocol state is persisted:
-   1. Sensor key (`key_b64`)
-   2. Sequence counter
 
-## Troubleshooting
-
-1. `invalid_source_ip`
-   1. Use CIDR format (example: `192.168.1.100/24`).
-2. Pairing times out
-   1. Start thermostat pairing first, then retry.
-3. No interface dropdown values
-   1. Ensure HA can see host adapters (container/network mode can affect this).
-4. Thermostat not seeing packets
-   1. Verify HA and thermostat are on reachable network segments.
-   2. Verify host/firewall allows outbound UDP/5001 and broadcast/multicast.
-
-## Manual References
-
-1. Venstar ColorTouch T8850 Owner's Manual (PDF):  
-   `https://files.venstar.com/accessories/thermostats/colortouch/T8850_owners_manual.pdf`
-2. Venstar `ACC-TSENWIFI` Installation Instructions (PDF):  
-   `https://files.venstar.com/accessories/ACC-TSENWIFI_Manual_Rev1.pdf`
-3. Venstar ColorTouch product/docs page:  
-   `https://venstar.com/thermostats/colortouch/`
