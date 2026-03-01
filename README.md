@@ -1,6 +1,6 @@
-# Venstar WiFi Sensor Emulator - User Guide
+# WiFi Sensor Emulator for Venstar - User Guide
 
-This integration emulates a Venstar `ACC-TSENWIFI` wireless sensor so a compatible Venstar thermostat can pair with it and receive temperature updates from Home Assistant.
+This integration emulates an `ACC-TSENWIFI` wireless sensor so compatible Venstar thermostats can pair with it and receive temperature updates from Home Assistant.
 
 ## Related Projects
 
@@ -70,14 +70,14 @@ This integration emulates a Venstar `ACC-TSENWIFI` wireless sensor so a compatib
 4. Add repository URL:
    1. `https://github.com/caliusoptimus/venmulator`
    2. Category: `Integration`
-5. Install `Venstar WiFi Sensor Emulator`.
+5. Install `WiFi Sensor Emulator for Venstar`.
 6. Restart Home Assistant.
 
 ## Add and Pair an Emulated Sensor
 
 1. In Home Assistant:
    1. Go to `Settings > Devices & Services`.
-   2. Add integration: `Venstar WiFi Sensor Emulator`.
+   2. Add integration: `WiFi Sensor Emulator for Venstar`.
    3. Fill out setup fields.
 2. On `Ready to pair?`, press `Pair` in Home Assistant.
 3. On thermostat (`T8850`/ColorTouch), follow wireless sensor pairing menu path:

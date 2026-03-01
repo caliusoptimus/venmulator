@@ -1,4 +1,4 @@
-"""Base entity helpers for Venstar emulator."""
+"""Base entity helpers for WiFi sensor emulator for Venstar."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class VenstarBaseEntity(CoordinatorEntity):
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Home Assistant",
-            model="Venstar WiFi Sensor Emulator",
+            model="WiFi Sensor Emulator for Venstar",
             sw_version="1.01",
         )
 

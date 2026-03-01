@@ -1,4 +1,4 @@
-"""Sensor entities for Venstar emulator."""
+"""Sensor entities for WiFi sensor emulator for Venstar."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ async def async_setup_entry(
 ) -> None:
     data = entry.runtime_data
     if not isinstance(data, IntegrationData):
-        raise RuntimeError("Venstar runtime data missing on config entry")
+        raise RuntimeError("Runtime data missing on config entry")
     async_add_entities([VenstarTemperatureSensor(data, entry)])
 
 

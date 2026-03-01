@@ -1,4 +1,4 @@
-"""Coordinator for Venstar WiFi sensor emulator state."""
+"""Coordinator for WiFi sensor emulator for Venstar state."""
 
 from __future__ import annotations
 

@@ -1,9 +1,9 @@
 {
-  "title": "Venstar WiFi Sensor Emulator",
+  "title": "WiFi Sensor Emulator for Venstar",
   "config": {
     "step": {
       "user": {
-        "title": "Add emulated Venstar sensor",
+        "title": "Add emulated WiFi sensor for Venstar",
         "description": "Creates one emulated WiFi sensor. After these fields, pairing is required before the sensor entry is created.",
         "data": {
           "name": "Entry Name",

@@ -1,4 +1,4 @@
-"""Venstar WiFi Sensor Emulator integration."""
+"""WiFi Sensor Emulator for Venstar integration."""
 
 from __future__ import annotations
 

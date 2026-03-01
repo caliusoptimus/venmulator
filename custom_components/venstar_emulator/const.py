@@ -1,4 +1,4 @@
-"""Constants for Venstar WiFi Sensor Emulator."""
+"""Constants for WiFi Sensor Emulator for Venstar."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ CONF_UPDATE_INTERVAL_SEC: Final = "update_interval_sec"
 CONF_SENSOR_KEY_B64: Final = "sensor_key_b64"
 CONF_START_SEQUENCE: Final = "start_sequence"
 
-DEFAULT_NAME: Final = "Venstar Emulated Sensor"
+DEFAULT_NAME: Final = "WiFi Sensor Emulator for Venstar"
 DEFAULT_SOURCE_INTERFACE: Final = ""
 DEFAULT_SOURCE_IP: Final = ""
 DEFAULT_SENSOR_NAME: Final = "HASensor"

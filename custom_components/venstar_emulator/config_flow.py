@@ -1,4 +1,4 @@
-"""Config flow for Venstar WiFi Sensor Emulator."""
+"""Config flow for WiFi Sensor Emulator for Venstar."""
 
 from __future__ import annotations
 
@@ -472,7 +472,7 @@ def _reconfigure_schema(defaults: dict[str, Any]) -> vol.Schema:
 
 
 class VenstarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Venstar WiFi Sensor Emulator."""
+    """Handle a config flow for WiFi Sensor Emulator for Venstar."""
 
     VERSION = 1
 

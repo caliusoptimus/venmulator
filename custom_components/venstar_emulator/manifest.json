@@ -1,6 +1,6 @@
 {
   "domain": "venstar_emulator",
-  "name": "Venstar WiFi Sensor Emulator",
+  "name": "WiFi Sensor Emulator for Venstar",
   "codeowners": [
     "@caliusoptimus"
   ],
