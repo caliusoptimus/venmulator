@@ -34,7 +34,7 @@ This integration emulates an `ACC-TSENWIFI` wireless sensor so compatible Vensta
 
 - Single sensor on a thermostat worked reliably.
 - Multiple thermostats on the same network, with one emulated sensor per thermostat, worked without issues.
-- Strange behavior was observed when using more than one emulated sensor on a single thermostat (tested on T8850).
+- Strange behavior was observed when using more than one emulated sensor on a single thermostat (tested on T8850). Based on analysis of the T8850 firmware, this seems to be an issue with the thermostat and not this integration. Example: One emulated sensor was paired and set as the control source. Upon pairing another sensor (such as outdoor), the first sensor was no longer used as a control source, although it is still paired. Removing the second sensor returns to normal behavior.
 
 ## Recommendation
 
