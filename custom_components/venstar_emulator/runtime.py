@@ -45,6 +45,7 @@ from .const import (
     DEFAULT_UNIT_ID,
     DEFAULT_UPDATE_INTERVAL_SEC,
     DOMAIN,
+    MAX_SEQUENCE,
     SENSOR_TYPE_NAME_TO_VALUE,
     STORAGE_VERSION,
 )
@@ -170,8 +171,13 @@ class VenstarRuntime:
     def _entry_default_sequence(self) -> int:
         entry_seq = self.entry.data.get(CONF_START_SEQUENCE)
         if isinstance(entry_seq, int) and entry_seq >= 0:
-            return entry_seq
+            return self._normalize_sequence(entry_seq)
         return DEFAULT_START_SEQUENCE
+
+    @staticmethod
+    def _normalize_sequence(value: int) -> int:
+        """Wrap sequence into the 16-bit range expected by the thermostat."""
+        return int(value) % (MAX_SEQUENCE + 1)
 
     async def async_initialize(self) -> None:
         """Load persistent state from storage."""
@@ -186,7 +192,7 @@ class VenstarRuntime:
 
         seq = stored.get(ATTR_SEQUENCE)
         if isinstance(seq, int):
-            self._sequence = seq
+            self._sequence = self._normalize_sequence(seq)
         else:
             self._sequence = self._entry_default_sequence()
 
@@ -207,6 +213,7 @@ class VenstarRuntime:
         await self._persist_state()
 
     async def _persist_state(self) -> None:
+        self._sequence = self._normalize_sequence(self._sequence)
         payload: dict[str, Any] = {
             ATTR_KEY_B64: self._key_b64,
             ATTR_SEQUENCE: self._sequence,
@@ -649,7 +656,7 @@ class VenstarRuntime:
         return pkt
 
     async def async_simulate_update_packet(self) -> SimulatedPacket:
-        self._sequence += 1
+        self._sequence = self._normalize_sequence(self._sequence + 1)
 
         temp_c = self._sample_temperature_c()
         pkt = self._build_packet(

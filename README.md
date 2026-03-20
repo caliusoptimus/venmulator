@@ -34,7 +34,8 @@ This integration emulates an `ACC-TSENWIFI` wireless sensor so compatible Vensta
 
 - Single sensor on a thermostat worked reliably.
 - Multiple thermostats on the same network, with one emulated sensor per thermostat, worked without issues.
-- Strange behavior was observed when using more than one emulated sensor on a single thermostat (tested on T8850). Based on analysis of the T8850 firmware, this seems to be an issue with the thermostat and not this integration. Example: One emulated sensor was paired and set as the control source. Upon pairing another sensor (such as outdoor), the first sensor was no longer used as a control source, although it is still paired. Removing the second sensor returns to normal behavior.
+- Strange behavior was observed when using more than one emulated sensor on a single thermostat (tested on T8850).
+- Sending updates quickly doesn't make the thermostat screen update any faster. A 15 second update interval is sensible.
 
 ## Recommendation
 
@@ -109,6 +110,7 @@ This integration emulates an `ACC-TSENWIFI` wireless sensor so compatible Vensta
    2. Venstar sensor protocol is native Celsius (0.5C index steps); Fahrenheit values are converted and may be rounded.
 8. `Update Interval (Seconds)`
    1. How often update packets are sent after pairing (`2` to `60` seconds).
+   2. Note: Sending updates every 2 seconds, unfortunately, won't make the thermostat screen update every 2 seconds.
 9. `Temperature Source Entity` (optional)
    1. If set, this entity drives transmitted temperature.
    2. If empty, emulator sends random values.
