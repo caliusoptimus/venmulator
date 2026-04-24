@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.storage import Store
@@ -92,6 +93,25 @@ class SimulatedPacket:
         }
 
 
+@dataclass(frozen=True)
+class ResolvedTemperatureSource:
+    """Resolved state of the configured HA temperature source."""
+
+    entity_id: str | None
+    status: str
+    temperature_c: float | None
+
+    @property
+    def broadcast_enabled(self) -> bool:
+        """Return True when update packets should still be sent."""
+        return self.status in {"unset", "ready"}
+
+    @property
+    def uses_random_fallback(self) -> bool:
+        """Return True when packets should use a generated temperature."""
+        return self.status == "unset"
+
+
 class VenstarRuntime:
     """Holds persistent emulation state and simulation actions."""
 
@@ -117,6 +137,7 @@ class VenstarRuntime:
         self._update_start_unsub: CALLBACK_TYPE | None = None
         self._last_periodic_failure_log: datetime | None = None
         self._suppressed_periodic_failures: int = 0
+        self._paused_temperature_entity: str | None = None
 
         self._rng = random.Random()
 
@@ -303,21 +324,49 @@ class VenstarRuntime:
             return 1
         return phase
 
-    def _resolve_source_temperature_c(self) -> float | None:
+    def _resolve_temperature_source(self) -> ResolvedTemperatureSource:
         entity_id = self._entry_value(CONF_TEMPERATURE_ENTITY, None)
         if not entity_id:
-            return None
+            return ResolvedTemperatureSource(
+                entity_id=None,
+                status="unset",
+                temperature_c=None,
+            )
 
         state = self.hass.states.get(entity_id)
         if state is None:
-            return None
-        if state.state in {"unknown", "unavailable", "none", ""}:
-            return None
+            return ResolvedTemperatureSource(
+                entity_id=entity_id,
+                status="missing",
+                temperature_c=None,
+            )
+        if state.state == STATE_UNKNOWN:
+            return ResolvedTemperatureSource(
+                entity_id=entity_id,
+                status="unknown",
+                temperature_c=None,
+            )
+        if state.state == STATE_UNAVAILABLE:
+            return ResolvedTemperatureSource(
+                entity_id=entity_id,
+                status="unavailable",
+                temperature_c=None,
+            )
+        if state.state == "":
+            return ResolvedTemperatureSource(
+                entity_id=entity_id,
+                status="invalid",
+                temperature_c=None,
+            )
 
         try:
             value = float(state.state)
         except ValueError:
-            return None
+            return ResolvedTemperatureSource(
+                entity_id=entity_id,
+                status="invalid",
+                temperature_c=None,
+            )
 
         unit_mode = str(
             self._entry_value(CONF_TEMPERATURE_UNIT, DEFAULT_TEMPERATURE_UNIT)
@@ -325,13 +374,43 @@ class VenstarRuntime:
         if unit_mode == "fahrenheit":
             value = (value - 32.0) * (5.0 / 9.0)
 
-        return value
+        return ResolvedTemperatureSource(
+            entity_id=entity_id,
+            status="ready",
+            temperature_c=value,
+        )
 
-    def _sample_temperature_c(self) -> float:
-        source_temp = self._resolve_source_temperature_c()
-        if source_temp is not None:
-            return source_temp
+    def _sample_temperature_c(
+        self, source: ResolvedTemperatureSource | None = None
+    ) -> float:
+        source = source or self._resolve_temperature_source()
+        if source.temperature_c is not None:
+            return source.temperature_c
         return self._rng.uniform(10.0, 30.0)
+
+    def _handle_temperature_source_status(
+        self, source: ResolvedTemperatureSource
+    ) -> bool:
+        """Track whether broadcasts should pause for an unusable source."""
+        if not source.broadcast_enabled:
+            if self._paused_temperature_entity != source.entity_id:
+                _LOGGER.info(
+                    "Configured temperature source entity '%s' is not usable "
+                    "(status: %s); pausing update broadcasts until it reports "
+                    "a numeric state or the source entity is cleared",
+                    source.entity_id,
+                    source.status,
+                )
+                self._paused_temperature_entity = source.entity_id
+            return False
+
+        if self._paused_temperature_entity is not None:
+            _LOGGER.info(
+                "Temperature source is usable again; resuming update broadcasts"
+            )
+            self._paused_temperature_entity = None
+
+        return True
 
     async def _async_resolve_source_ip_for_interface(
         self, source_interface: str
@@ -638,8 +717,12 @@ class VenstarRuntime:
         )
         await self._persist_state()
 
-    async def async_simulate_pair_packet(self) -> SimulatedPacket:
-        temp_c = self._sample_temperature_c()
+    async def async_simulate_pair_packet(self) -> SimulatedPacket | None:
+        source = self._resolve_temperature_source()
+        if not self._handle_temperature_source_status(source):
+            return None
+
+        temp_c = self._sample_temperature_c(source)
         pkt = self._build_packet(
             stage="pair",
             message_type=43,
@@ -655,10 +738,14 @@ class VenstarRuntime:
         await self._persist_state()
         return pkt
 
-    async def async_simulate_update_packet(self) -> SimulatedPacket:
+    async def async_simulate_update_packet(self) -> SimulatedPacket | None:
+        source = self._resolve_temperature_source()
+        if not self._handle_temperature_source_status(source):
+            return None
+
         self._sequence = self._normalize_sequence(self._sequence + 1)
 
-        temp_c = self._sample_temperature_c()
+        temp_c = self._sample_temperature_c(source)
         pkt = self._build_packet(
             stage="update",
             message_type=42,
@@ -675,7 +762,7 @@ class VenstarRuntime:
         return pkt
 
     async def async_snapshot(self) -> dict[str, Any]:
-        source_temp_c = self._resolve_source_temperature_c()
+        source = self._resolve_temperature_source()
         network = await self._async_network_config()
 
         data: dict[str, Any] = {
@@ -692,15 +779,20 @@ class VenstarRuntime:
             "targets": network["targets"],
             "unit_id": int(self._entry_value(CONF_UNIT_ID, DEFAULT_UNIT_ID)),
             "sensor_type": str(self._entry_value(CONF_SENSOR_TYPE, "remote")),
-            "sensor_name": str(self._entry_value(CONF_SENSOR_NAME, DEFAULT_SENSOR_NAME)),
+            "sensor_name": str(
+                self._entry_value(CONF_SENSOR_NAME, DEFAULT_SENSOR_NAME)
+            ),
             "sensor_mac": normalize_mac(
                 str(self._entry_value(CONF_SENSOR_MAC, "dcf31c286547"))
             ),
             "temperature_entity": self._entry_value(CONF_TEMPERATURE_ENTITY, None),
+            "temperature_source_status": source.status,
             "temperature_unit_mode": self._entry_value(
                 CONF_TEMPERATURE_UNIT, DEFAULT_TEMPERATURE_UNIT
             ),
-            "source_temperature_c": source_temp_c,
+            "broadcast_enabled": source.broadcast_enabled,
+            "temperature_random_fallback_active": source.uses_random_fallback,
+            "source_temperature_c": source.temperature_c,
             "last_temperature_c": self._last_temp_c,
             "sequence": self._sequence,
             "battery_percent": self._battery_percent,

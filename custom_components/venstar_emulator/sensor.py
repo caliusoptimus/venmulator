@@ -40,7 +40,16 @@ class VenstarTemperatureSensor(VenstarBaseEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_temperature"
 
     @property
+    def available(self) -> bool:
+        return super().available and self.coordinator.data.get(
+            "broadcast_enabled", True
+        )
+
+    @property
     def native_value(self) -> float | None:
+        if not self.coordinator.data.get("broadcast_enabled", True):
+            return None
+
         source = self.coordinator.data.get("source_temperature_c")
         if source is not None:
             return round(float(source), 2)
@@ -55,7 +64,14 @@ class VenstarTemperatureSensor(VenstarBaseEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
             "temperature_entity": self.coordinator.data.get("temperature_entity"),
+            "temperature_source_status": self.coordinator.data.get(
+                "temperature_source_status"
+            ),
             "temperature_unit_mode": self.coordinator.data.get("temperature_unit_mode"),
+            "broadcast_enabled": self.coordinator.data.get("broadcast_enabled"),
+            "temperature_random_fallback_active": self.coordinator.data.get(
+                "temperature_random_fallback_active"
+            ),
             "sensor_type": self.coordinator.data.get("sensor_type"),
             "unit_id": self.coordinator.data.get("unit_id"),
         }
