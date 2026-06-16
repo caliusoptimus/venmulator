@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
@@ -28,6 +32,16 @@ async def async_setup_entry(
 class VenstarTemperatureSensor(VenstarBaseEntity, SensorEntity):
     """Current emulated sensor temperature."""
 
+    _unrecorded_attributes = frozenset(
+        {
+            "sequence",
+            "last_packet",
+            "last_send",
+            "last_send_status",
+            "packets_generated_since_start",
+            "udp_packets_sent_since_start",
+        }
+    )
     _attr_name = None
     _attr_translation_key = "emulated_temperature"
     _attr_unique_id = None
@@ -72,6 +86,31 @@ class VenstarTemperatureSensor(VenstarBaseEntity, SensorEntity):
             "temperature_random_fallback_active": self.coordinator.data.get(
                 "temperature_random_fallback_active"
             ),
+            "sensor_name": self.coordinator.data.get("sensor_name"),
+            "sensor_mac": self.coordinator.data.get("sensor_mac"),
             "sensor_type": self.coordinator.data.get("sensor_type"),
             "unit_id": self.coordinator.data.get("unit_id"),
+            "battery_percent": self.coordinator.data.get("battery_percent"),
+            "sequence": self.coordinator.data.get("sequence"),
+            "pairing_active": self.coordinator.data.get("pairing_active"),
+            "pairing_until": self.coordinator.data.get("pairing_until"),
+            "source_interface": self.coordinator.data.get("source_interface"),
+            "source_ip": self.coordinator.data.get("source_ip"),
+            "source_ip_cidr": self.coordinator.data.get("source_ip_cidr"),
+            "source_mode": self.coordinator.data.get("source_mode"),
+            "target_mode": self.coordinator.data.get("target_mode"),
+            "unicast_target": self.coordinator.data.get("unicast_target"),
+            "directed_broadcast": self.coordinator.data.get("directed_broadcast"),
+            "multicast_target": self.coordinator.data.get("multicast_target"),
+            "udp_port": self.coordinator.data.get("udp_port"),
+            "targets": self.coordinator.data.get("targets"),
+            "last_packet": self.coordinator.data.get("last_packet"),
+            "last_send": self.coordinator.data.get("last_send"),
+            "last_send_status": self.coordinator.data.get("last_send_status"),
+            "packets_generated_since_start": self.coordinator.data.get(
+                "packets_generated_since_start"
+            ),
+            "udp_packets_sent_since_start": self.coordinator.data.get(
+                "udp_packets_sent_since_start"
+            ),
         }

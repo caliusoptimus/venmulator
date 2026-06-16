@@ -4,29 +4,45 @@
     "step": {
       "user": {
         "title": "Add emulated WiFi sensor for Venstar",
-        "description": "Creates one emulated WiFi sensor. After these fields, pairing is required before the sensor entry is created.",
+        "description": "Select the Home Assistant network interface that can reach the thermostat and choose the emulated sensor details. On the next screen, start pairing from Home Assistant first, then add the wireless sensor from the thermostat menu.",
         "data": {
           "name": "Entry Name",
-          "source_interface": "Source Interface",
-          "source_ip": "Source IP (Optional Fallback, CIDR)",
+          "source_interface": "Network Interface",
           "sensor_name": "Sensor Name",
           "unit_id": "Unit ID",
           "sensor_type": "Sensor Type",
           "temperature_unit": "Temperature Unit",
           "update_interval_sec": "Update Interval (Seconds)",
-          "temperature_entity": "Temperature Source Entity"
+          "temperature_entity": "Temperature Source Entity",
+          "target_mode": "Mode (Advanced)",
+          "unicast_target": "Thermostat IP for Unicast (Advanced)"
+        },
+        "data_description": {
+          "source_interface": "Choose the interface that can reach the thermostat.",
+          "update_interval_sec": "Allowed range: 15 to 300 seconds.",
+          "unicast_target": "Only needed when Mode is Unicast. Leave empty for Broadcast mode."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Broadcast mode does not need a thermostat IP and requires the thermostat to be on the same subnet as the selected interface. Unicast mode requires Thermostat IP and can reach a thermostat on another routed subnet if the Home Assistant host/container can route to it.",
+            "data": {
+              "target_mode": "Mode (Advanced)",
+              "unicast_target": "Thermostat IP for Unicast (Advanced)"
+            }
+          }
         }
       },
       "pair_ready": {
         "title": "Ready to pair?",
-        "description": "Place the thermostat in wireless sensor pairing mode, then press Pair.",
+        "description": "Press Pair to start sending pairing packets from Home Assistant. After pairing has started, use the thermostat menu to add a new wireless sensor.",
         "menu_options": {
           "pair_start": "Pair"
         }
       },
       "pairing_active": {
         "title": "Pairing in progress",
-        "description": "Pairing packets are being sent. Remaining timeout: {remaining_seconds}s.",
+        "description": "Pairing packets are being sent. Use the thermostat menu to add a new wireless sensor now. Remaining timeout: {remaining_seconds}s.",
         "menu_options": {
           "pair_success": "Pairing Successful",
           "pair_cancel": "Cancel Pairing"
@@ -54,15 +70,36 @@
         "description": "Only non-identity fields are editable after creation.",
         "data": {
           "name": "Entry Name",
+          "source_interface": "Network Interface",
           "temperature_unit": "Temperature Unit",
           "update_interval_sec": "Update Interval (Seconds)",
-          "temperature_entity": "Temperature Source Entity"
+          "temperature_entity": "Temperature Source Entity",
+          "target_mode": "Mode (Advanced)",
+          "unicast_target": "Thermostat IP for Unicast (Advanced)",
+          "pair_again": "Pair again?"
+        },
+        "data_description": {
+          "update_interval_sec": "Allowed range: 15 to 300 seconds.",
+          "source_interface": "Choose the interface that can reach the thermostat.",
+          "pair_again": "After saving these settings, start the pairing flow again for this existing emulated sensor.",
+          "unicast_target": "Only needed when Mode is Unicast. Leave empty for Broadcast mode."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Broadcast mode does not need a thermostat IP and requires the thermostat to be on the same subnet as the selected interface. Unicast mode requires Thermostat IP and can reach a thermostat on another routed subnet if the Home Assistant host/container can route to it.",
+            "data": {
+              "target_mode": "Mode (Advanced)",
+              "unicast_target": "Thermostat IP for Unicast (Advanced)"
+            }
+          }
         }
       }
     },
     "error": {
-      "invalid_source_ip": "Invalid source IP CIDR format",
-      "source_required": "Set source interface or source IP fallback",
+      "invalid_unicast_target": "Invalid thermostat IPv4 address",
+      "network_interface_required": "Select a network interface",
+      "unicast_target_required": "Set thermostat IP when Mode is Unicast",
       "sensor_name_required": "Sensor Name is required",
       "sensor_name_too_long": "Sensor Name must be 14 UTF-8 bytes or less",
       "unit_id_in_use": "Unit ID is already in use by another emulated sensor",
@@ -80,15 +117,33 @@
         "title": "Edit emulated sensor",
         "data": {
           "name": "Entry Name",
+          "source_interface": "Network Interface",
           "temperature_unit": "Temperature Unit",
           "update_interval_sec": "Update Interval (Seconds)",
-          "temperature_entity": "Temperature Source Entity"
+          "temperature_entity": "Temperature Source Entity",
+          "target_mode": "Mode (Advanced)",
+          "unicast_target": "Thermostat IP for Unicast (Advanced)"
+        },
+        "data_description": {
+          "update_interval_sec": "Allowed range: 15 to 300 seconds.",
+          "source_interface": "Choose the interface that can reach the thermostat.",
+          "unicast_target": "Only needed when Mode is Unicast. Leave empty for Broadcast mode."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Broadcast mode does not need a thermostat IP and requires the thermostat to be on the same subnet as the selected interface. Unicast mode requires Thermostat IP and can reach a thermostat on another routed subnet if the Home Assistant host/container can route to it.",
+            "data": {
+              "target_mode": "Mode (Advanced)",
+              "unicast_target": "Thermostat IP for Unicast (Advanced)"
+            }
+          }
         }
       }
     },
     "error": {
-      "invalid_source_ip": "Invalid source IP CIDR format",
-      "source_required": "Set source interface or source IP fallback",
+      "invalid_unicast_target": "Invalid thermostat IPv4 address",
+      "unicast_target_required": "Set thermostat IP when Mode is Unicast",
       "sensor_name_required": "Sensor Name is required",
       "sensor_name_too_long": "Sensor Name must be 14 UTF-8 bytes or less",
       "unit_id_in_use": "Unit ID is already in use by another emulated sensor",
@@ -108,6 +163,12 @@
       "options": {
         "celsius": "Celsius",
         "fahrenheit": "Fahrenheit"
+      }
+    },
+    "target_mode": {
+      "options": {
+        "auto": "Broadcast",
+        "unicast": "Unicast"
       }
     }
   },

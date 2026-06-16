@@ -30,25 +30,31 @@ from .const import (
     CONF_SENSOR_NAME,
     CONF_SENSOR_TYPE,
     CONF_SOURCE_INTERFACE,
-    CONF_SOURCE_IP,
     CONF_START_SEQUENCE,
+    CONF_TARGET_MODE,
     CONF_TEMPERATURE_ENTITY,
     CONF_TEMPERATURE_UNIT,
     CONF_UNIT_ID,
     CONF_UPDATE_INTERVAL_SEC,
+    CONF_UNICAST_TARGET,
     DEFAULT_BATTERY_PERCENT,
     DEFAULT_PAIRING_WINDOW_SEC,
     DEFAULT_SENSOR_NAME,
     DEFAULT_SOURCE_INTERFACE,
-    DEFAULT_SOURCE_IP,
     DEFAULT_START_SEQUENCE,
+    DEFAULT_TARGET_MODE,
     DEFAULT_TEMPERATURE_UNIT,
     DEFAULT_UNIT_ID,
     DEFAULT_UPDATE_INTERVAL_SEC,
+    DEFAULT_UNICAST_TARGET,
     DOMAIN,
     MAX_SEQUENCE,
+    MAX_UPDATE_INTERVAL_SEC,
+    MIN_UPDATE_INTERVAL_SEC,
     SENSOR_TYPE_NAME_TO_VALUE,
     STORAGE_VERSION,
+    TARGET_MODE_UNICAST,
+    TARGET_MODES,
 )
 from .protocol import (
     build_info,
@@ -116,6 +122,7 @@ class VenstarRuntime:
     """Holds persistent emulation state and simulation actions."""
 
     LEGACY_CONF_BROADCAST_SUBNET = "broadcast_subnet"
+    LEGACY_CONF_SOURCE_IP = "source_ip"
     VENSTAR_MULTICAST_TARGET = "224.0.0.1"
     VENSTAR_UDP_PORT = 5001
     PERIODIC_FAILURE_LOG_INTERVAL_SEC = 60
@@ -133,11 +140,18 @@ class VenstarRuntime:
         # Battery remains fixed at 100 for this integration phase.
         self._battery_percent: int = DEFAULT_BATTERY_PERCENT
         self._last_temp_c: float | None = None
+        self._last_packet: SimulatedPacket | None = None
+        self._last_send_result: dict[str, Any] | None = None
+        self._last_send_completed_utc: str | None = None
+        self._packets_generated_since_start: int = 0
+        self._udp_packets_sent_since_start: int = 0
         self._update_unsub: CALLBACK_TYPE | None = None
         self._update_start_unsub: CALLBACK_TYPE | None = None
         self._last_periodic_failure_log: datetime | None = None
         self._suppressed_periodic_failures: int = 0
         self._paused_temperature_entity: str | None = None
+        self._last_network_debug_signature: tuple[Any, ...] | None = None
+        self._last_temperature_source_debug_signature: tuple[Any, ...] | None = None
 
         self._rng = random.Random()
 
@@ -200,9 +214,111 @@ class VenstarRuntime:
         """Wrap sequence into the 16-bit range expected by the thermostat."""
         return int(value) % (MAX_SEQUENCE + 1)
 
+    @staticmethod
+    def _target_summary(targets: Any) -> list[str]:
+        """Return a compact, log-safe target summary."""
+        if not isinstance(targets, list):
+            return []
+
+        summary: list[str] = []
+        for target in targets:
+            if not isinstance(target, dict):
+                continue
+            kind = str(target.get("kind", "unknown"))
+            address = str(target.get("address", ""))
+            port = target.get("port", "")
+            status = target.get("status")
+            if status:
+                summary.append(f"{kind}:{address}:{port}:{status}")
+            else:
+                summary.append(f"{kind}:{address}:{port}")
+        return summary
+
+    @staticmethod
+    def _packet_diagnostics(pkt: SimulatedPacket | None) -> dict[str, Any] | None:
+        """Return useful packet diagnostics without exposing auth or payload data."""
+        if pkt is None:
+            return None
+
+        return {
+            "stage": pkt.stage,
+            "message_type": pkt.message_type,
+            "sequence": pkt.sequence,
+            "temperature_c": pkt.temperature_c,
+            "temperature_index": pkt.temperature_index,
+            "battery_percent": pkt.battery_percent,
+            "generated_utc": pkt.generated_utc,
+        }
+
+    @staticmethod
+    def _send_status(result: dict[str, Any] | None) -> str | None:
+        """Return a compact status for the last send attempt."""
+        if result is None:
+            return None
+
+        try:
+            sent_count = int(result.get("sent_count", 0))
+        except (TypeError, ValueError):
+            sent_count = 0
+
+        targets = result.get("targets")
+        statuses = (
+            [
+                str(target.get("status", ""))
+                for target in targets
+                if isinstance(target, dict)
+            ]
+            if isinstance(targets, list)
+            else []
+        )
+
+        if sent_count > 0:
+            if statuses and any(status != "sent" for status in statuses):
+                return "partial"
+            return "sent"
+
+        if not isinstance(targets, list) or not targets:
+            return "no_targets"
+
+        if any(status.startswith("error:") for status in statuses):
+            return "error"
+        if "invalid_target" in statuses:
+            return "invalid_target"
+        return "not_sent"
+
+    def _send_diagnostics(self) -> dict[str, Any] | None:
+        """Return useful send diagnostics from the last send attempt."""
+        if self._last_send_result is None:
+            return None
+
+        try:
+            sent_count = int(self._last_send_result.get("sent_count", 0))
+        except (TypeError, ValueError):
+            sent_count = 0
+
+        return {
+            "completed_utc": self._last_send_completed_utc,
+            "status": self._send_status(self._last_send_result),
+            "sent_count": sent_count,
+            "source_ip": self._last_send_result.get("source_ip"),
+            "source_interface": self._last_send_result.get("source_interface"),
+            "source_mode": self._last_send_result.get("source_mode"),
+            "bind_source_ip": self._last_send_result.get("bind_source_ip"),
+            "bind_interface": self._last_send_result.get("bind_interface"),
+            "set_multicast_interface": self._last_send_result.get(
+                "set_multicast_interface"
+            ),
+            "targets": self._last_send_result.get("targets"),
+        }
+
     async def async_initialize(self) -> None:
         """Load persistent state from storage."""
         stored = await self._store.async_load() or {}
+        _LOGGER.debug(
+            "Initializing runtime for entry %s; stored state present=%s",
+            self.entry.entry_id,
+            bool(stored),
+        )
 
         key_b64 = stored.get(ATTR_KEY_B64)
         if isinstance(key_b64, str):
@@ -214,6 +330,13 @@ class VenstarRuntime:
         seq = stored.get(ATTR_SEQUENCE)
         if isinstance(seq, int):
             self._sequence = self._normalize_sequence(seq)
+            if seq != self._sequence:
+                _LOGGER.debug(
+                    "Normalized stored sequence for entry %s from %s to %s",
+                    self.entry.entry_id,
+                    seq,
+                    self._sequence,
+                )
         else:
             self._sequence = self._entry_default_sequence()
 
@@ -232,6 +355,15 @@ class VenstarRuntime:
                 self._pairing_until = None
 
         await self._persist_state()
+        _LOGGER.debug(
+            "Runtime initialized for entry %s: sequence=%s, "
+            "last_temp_c=%s, pairing_active=%s, key_present=%s",
+            self.entry.entry_id,
+            self._sequence,
+            self._last_temp_c,
+            self.is_pairing_active(),
+            bool(self._key_b64),
+        )
 
     async def _persist_state(self) -> None:
         self._sequence = self._normalize_sequence(self._sequence)
@@ -245,11 +377,22 @@ class VenstarRuntime:
             else None,
         }
         await self._store.async_save(payload)
+        _LOGGER.debug(
+            "Persisted runtime state for entry %s: sequence=%s, "
+            "last_temp_c=%s, pairing_until=%s",
+            self.entry.entry_id,
+            self._sequence,
+            self._last_temp_c,
+            payload[ATTR_PAIRING_UNTIL],
+        )
 
     def _update_interval_seconds(self) -> int:
         raw = self._entry_value(CONF_UPDATE_INTERVAL_SEC, DEFAULT_UPDATE_INTERVAL_SEC)
         try:
-            return min(60, max(2, int(raw)))
+            return min(
+                MAX_UPDATE_INTERVAL_SEC,
+                max(MIN_UPDATE_INTERVAL_SEC, int(raw)),
+            )
         except (TypeError, ValueError):
             return DEFAULT_UPDATE_INTERVAL_SEC
 
@@ -258,10 +401,21 @@ class VenstarRuntime:
         interval_seconds = self._update_interval_seconds()
         interval = timedelta(seconds=interval_seconds)
         phase_offset = self._periodic_phase_offset_seconds(interval_seconds)
+        _LOGGER.debug(
+            "Scheduling periodic updates for entry %s: interval=%ss, phase_offset=%ss",
+            self.entry.entry_id,
+            interval_seconds,
+            phase_offset,
+        )
 
         async def _async_start_loop(_now: datetime) -> None:
             self._update_unsub = async_track_time_interval(
                 self.hass, self._async_periodic_update_tick, interval
+            )
+            _LOGGER.debug(
+                "Periodic update loop started for entry %s: interval=%ss",
+                self.entry.entry_id,
+                interval_seconds,
             )
 
         if phase_offset <= 0:
@@ -276,18 +430,38 @@ class VenstarRuntime:
         if self._update_start_unsub is not None:
             self._update_start_unsub()
             self._update_start_unsub = None
+            _LOGGER.debug(
+                "Cancelled delayed update start for entry %s",
+                self.entry.entry_id,
+            )
         if self._update_unsub is not None:
             self._update_unsub()
             self._update_unsub = None
+            _LOGGER.debug(
+                "Stopped periodic update loop for entry %s",
+                self.entry.entry_id,
+            )
 
     async def async_shutdown(self) -> None:
+        _LOGGER.debug("Shutting down runtime for entry %s", self.entry.entry_id)
         await self.async_stop_periodic_updates()
 
     async def _async_periodic_update_tick(self, now: datetime) -> None:
         if self.is_pairing_active(now):
+            _LOGGER.debug(
+                "Skipping periodic update for entry %s while pairing is active "
+                "until %s",
+                self.entry.entry_id,
+                self._pairing_until,
+            )
             return
         try:
-            await self.async_simulate_update_packet()
+            pkt = await self.async_simulate_update_packet()
+            if pkt is None:
+                _LOGGER.debug(
+                    "Periodic update produced no packet for entry %s",
+                    self.entry.entry_id,
+                )
         except Exception as err:  # noqa: BLE001
             should_log = False
             if self._last_periodic_failure_log is None:
@@ -392,6 +566,24 @@ class VenstarRuntime:
         self, source: ResolvedTemperatureSource
     ) -> bool:
         """Track whether broadcasts should pause for an unusable source."""
+        signature = (
+            source.entity_id,
+            source.status,
+            source.broadcast_enabled,
+            source.uses_random_fallback,
+        )
+        if signature != self._last_temperature_source_debug_signature:
+            self._last_temperature_source_debug_signature = signature
+            _LOGGER.debug(
+                "Temperature source status for entry %s: entity=%s, "
+                "status=%s, broadcast_enabled=%s, random_fallback=%s",
+                self.entry.entry_id,
+                source.entity_id,
+                source.status,
+                source.broadcast_enabled,
+                source.uses_random_fallback,
+            )
+
         if not source.broadcast_enabled:
             if self._paused_temperature_entity != source.entity_id:
                 _LOGGER.info(
@@ -424,6 +616,10 @@ class VenstarRuntime:
             adapters = await network.async_get_adapters(self.hass)
         except Exception:  # noqa: BLE001
             adapters = None
+            _LOGGER.debug(
+                "Could not read adapters from homeassistant.components.network",
+                exc_info=True,
+            )
 
         # Backward compatibility fallback.
         if adapters is None:
@@ -435,7 +631,18 @@ class VenstarRuntime:
             try:
                 adapters = await async_get_adapters(self.hass)
             except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Could not read adapters from legacy network helper",
+                    exc_info=True,
+                )
                 return None
+
+        if adapters is None:
+            _LOGGER.debug(
+                "Network adapter discovery returned no adapter data for entry %s",
+                self.entry.entry_id,
+            )
+            return None
 
         for adapter in adapters:
             name = str(adapter.get("name", "")).strip()
@@ -452,10 +659,56 @@ class VenstarRuntime:
                 addr = ipv4.get("address")
                 prefix = ipv4.get("network_prefix")
                 if isinstance(addr, str) and isinstance(prefix, int) and prefix < 31:
+                    _LOGGER.debug(
+                        "Resolved source interface for entry %s: %s -> %s/%s",
+                        self.entry.entry_id,
+                        source_interface,
+                        addr,
+                        prefix,
+                    )
                     return f"{addr}/{prefix}"
+            _LOGGER.debug(
+                "Source interface %s for entry %s has no usable IPv4 address",
+                source_interface,
+                self.entry.entry_id,
+            )
             return None
 
+        _LOGGER.debug(
+            "Source interface %s for entry %s was not found",
+            source_interface,
+            self.entry.entry_id,
+        )
         return None
+
+    def _log_network_config(self, network: dict[str, Any]) -> None:
+        """Log network configuration when it changes."""
+        signature = (
+            network.get("source_interface"),
+            network.get("source_ip"),
+            network.get("source_ip_cidr"),
+            network.get("source_mode"),
+            network.get("target_mode"),
+            network.get("unicast_target"),
+            tuple(self._target_summary(network.get("targets"))),
+        )
+        if signature == self._last_network_debug_signature:
+            return
+
+        self._last_network_debug_signature = signature
+        _LOGGER.debug(
+            "Resolved network config for entry %s: source_interface=%s, "
+            "source_ip=%s, source_ip_cidr=%s, source_mode=%s, "
+            "target_mode=%s, unicast_target=%s, targets=%s",
+            self.entry.entry_id,
+            network.get("source_interface"),
+            network.get("source_ip"),
+            network.get("source_ip_cidr"),
+            network.get("source_mode"),
+            network.get("target_mode"),
+            network.get("unicast_target"),
+            self._target_summary(network.get("targets")),
+        )
 
     def _resolve_network_config(
         self,
@@ -467,19 +720,46 @@ class VenstarRuntime:
         ).strip()
         source_interface = source_interface or None
 
-        configured_source_ip_raw = str(
-            self._entry_value(CONF_SOURCE_IP, DEFAULT_SOURCE_IP)
+        target_mode = str(
+            self._entry_value(CONF_TARGET_MODE, DEFAULT_TARGET_MODE)
         ).strip()
-        source_ip_raw = configured_source_ip_raw
-        source_mode = "static"
+        if target_mode not in TARGET_MODES:
+            target_mode = DEFAULT_TARGET_MODE
+
+        unicast_target_raw = str(
+            self._entry_value(CONF_UNICAST_TARGET, DEFAULT_UNICAST_TARGET)
+        ).strip()
+        unicast_target: str | None = None
+        if unicast_target_raw:
+            try:
+                address = ipaddress.ip_address(unicast_target_raw)
+                if isinstance(address, ipaddress.IPv4Address):
+                    unicast_target = str(address)
+            except ValueError:
+                unicast_target = None
+                _LOGGER.debug(
+                    "Ignoring invalid unicast target for entry %s: %s",
+                    self.entry.entry_id,
+                    unicast_target_raw,
+                )
+
+        legacy_source_ip_raw = str(
+            self._entry_value(self.LEGACY_CONF_SOURCE_IP, "")
+        ).strip()
+
+        source_ip_raw = resolved_interface_source_ip_cidr
+        source_mode = "os_route"
         if source_interface:
             if resolved_interface_source_ip_cidr:
-                source_ip_raw = resolved_interface_source_ip_cidr
                 source_mode = "interface"
-            elif configured_source_ip_raw:
-                source_mode = "interface_fallback_static"
+            elif legacy_source_ip_raw:
+                source_ip_raw = legacy_source_ip_raw
+                source_mode = "interface_fallback_legacy_source_ip"
             else:
                 source_mode = "interface_unresolved"
+        elif legacy_source_ip_raw:
+            source_ip_raw = legacy_source_ip_raw
+            source_mode = "legacy_source_ip"
 
         source_ip: str | None = None
         source_ip_cidr: str | None = None
@@ -493,6 +773,11 @@ class VenstarRuntime:
                     source_ip_cidr = str(source_iface)
                     directed_broadcast = str(source_iface.network.broadcast_address)
             except ValueError:
+                _LOGGER.debug(
+                    "Ignoring invalid source IP CIDR for entry %s: %s",
+                    self.entry.entry_id,
+                    source_ip_raw,
+                )
                 pass
 
         legacy_broadcast_subnet: str | None = None
@@ -507,29 +792,50 @@ class VenstarRuntime:
                         directed_broadcast = str(legacy_network.broadcast_address)
                         legacy_broadcast_subnet = str(legacy_network)
                 except ValueError:
+                    _LOGGER.debug(
+                        "Ignoring invalid legacy broadcast subnet for entry %s: %s",
+                        self.entry.entry_id,
+                        legacy_subnet_raw,
+                    )
                     pass
 
-        targets: list[dict[str, Any]] = [
-            {
-                "address": self.VENSTAR_MULTICAST_TARGET,
-                "port": self.VENSTAR_UDP_PORT,
-                "kind": "multicast",
-            }
-        ]
-        if directed_broadcast and directed_broadcast != self.VENSTAR_MULTICAST_TARGET:
-            targets.append(
+        if target_mode == TARGET_MODE_UNICAST:
+            targets: list[dict[str, Any]] = []
+            if unicast_target:
+                targets.append(
+                    {
+                        "address": unicast_target,
+                        "port": self.VENSTAR_UDP_PORT,
+                        "kind": "unicast",
+                    }
+                )
+        else:
+            targets = [
                 {
-                    "address": directed_broadcast,
+                    "address": self.VENSTAR_MULTICAST_TARGET,
                     "port": self.VENSTAR_UDP_PORT,
-                    "kind": "directed_broadcast",
+                    "kind": "multicast",
                 }
-            )
+            ]
+            if (
+                directed_broadcast
+                and directed_broadcast != self.VENSTAR_MULTICAST_TARGET
+            ):
+                targets.append(
+                    {
+                        "address": directed_broadcast,
+                        "port": self.VENSTAR_UDP_PORT,
+                        "kind": "directed_broadcast",
+                    }
+                )
 
         return {
             "source_interface": source_interface,
             "source_ip": source_ip,
             "source_ip_cidr": source_ip_cidr,
             "source_mode": source_mode,
+            "target_mode": target_mode,
+            "unicast_target": unicast_target,
             "directed_broadcast": directed_broadcast,
             "multicast_target": self.VENSTAR_MULTICAST_TARGET,
             "udp_port": self.VENSTAR_UDP_PORT,
@@ -546,9 +852,11 @@ class VenstarRuntime:
             resolved_ip_cidr = await self._async_resolve_source_ip_for_interface(
                 source_interface
             )
-        return self._resolve_network_config(
+        network = self._resolve_network_config(
             resolved_interface_source_ip_cidr=resolved_ip_cidr
         )
+        self._log_network_config(network)
+        return network
 
     @staticmethod
     def _send_udp_sync(payload: bytes, network: dict[str, Any]) -> dict[str, Any]:
@@ -656,9 +964,41 @@ class VenstarRuntime:
         network: dict[str, Any],
     ) -> dict[str, Any]:
         payload = bytes.fromhex(pkt.payload_hex)
-        return await self.hass.async_add_executor_job(
+        result = await self.hass.async_add_executor_job(
             self._send_udp_sync, payload, network
         )
+        try:
+            sent_count = int(result.get("sent_count", 0))
+        except (TypeError, ValueError):
+            sent_count = 0
+        self._last_packet = pkt
+        self._last_send_result = result
+        self._last_send_completed_utc = (
+            datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        )
+        self._packets_generated_since_start += 1
+        self._udp_packets_sent_since_start += sent_count
+        _LOGGER.debug(
+            "Sent %s packet for entry %s: message_type=%s, sequence=%s, "
+            "temperature_c=%s, temperature_index=%s, battery=%s, "
+            "target_mode=%s, source_ip=%s, sent_count=%s, targets=%s, "
+            "bind_source_ip=%s, bind_interface=%s, multicast_if=%s",
+            pkt.stage,
+            self.entry.entry_id,
+            pkt.message_type,
+            pkt.sequence,
+            pkt.temperature_c,
+            pkt.temperature_index,
+            pkt.battery_percent,
+            network.get("target_mode"),
+            result.get("source_ip"),
+            sent_count,
+            self._target_summary(result.get("targets")),
+            result.get("bind_source_ip"),
+            result.get("bind_interface"),
+            result.get("set_multicast_interface"),
+        )
+        return result
 
     def _build_packet(
         self,
@@ -715,11 +1055,42 @@ class VenstarRuntime:
         self._pairing_until = datetime.now(timezone.utc) + timedelta(
             seconds=DEFAULT_PAIRING_WINDOW_SEC
         )
+        _LOGGER.debug(
+            "Entered pairing mode for entry %s until %s",
+            self.entry.entry_id,
+            self._pairing_until,
+        )
+        await self._persist_state()
+
+    async def async_exit_pairing_mode(self) -> None:
+        self._pairing_until = None
+        _LOGGER.debug("Exited pairing mode for entry %s", self.entry.entry_id)
+        await self._persist_state()
+
+    async def async_apply_pairing_state(self, key_b64: str, sequence: int) -> None:
+        """Persist pairing credentials and sequence after a successful re-pair."""
+        normalized_key = self._normalize_entry_key_b64(key_b64)
+        if normalized_key is None:
+            raise ValueError("Invalid sensor key")
+
+        self._key_b64 = normalized_key
+        self._sequence = self._normalize_sequence(sequence)
+        self._pairing_until = None
+        _LOGGER.debug(
+            "Applied re-pairing state for entry %s: sequence=%s",
+            self.entry.entry_id,
+            self._sequence,
+        )
         await self._persist_state()
 
     async def async_simulate_pair_packet(self) -> SimulatedPacket | None:
         source = self._resolve_temperature_source()
         if not self._handle_temperature_source_status(source):
+            _LOGGER.debug(
+                "Pair packet suppressed for entry %s because source status is %s",
+                self.entry.entry_id,
+                source.status,
+            )
             return None
 
         temp_c = self._sample_temperature_c(source)
@@ -741,9 +1112,22 @@ class VenstarRuntime:
     async def async_simulate_update_packet(self) -> SimulatedPacket | None:
         source = self._resolve_temperature_source()
         if not self._handle_temperature_source_status(source):
+            _LOGGER.debug(
+                "Update packet suppressed for entry %s because source status is %s",
+                self.entry.entry_id,
+                source.status,
+            )
             return None
 
+        previous_sequence = self._sequence
         self._sequence = self._normalize_sequence(self._sequence + 1)
+        if self._sequence < previous_sequence:
+            _LOGGER.debug(
+                "Sequence wrapped for entry %s: %s -> %s",
+                self.entry.entry_id,
+                previous_sequence,
+                self._sequence,
+            )
 
         temp_c = self._sample_temperature_c(source)
         pkt = self._build_packet(
@@ -772,6 +1156,8 @@ class VenstarRuntime:
             "source_ip": network["source_ip"],
             "source_ip_cidr": network["source_ip_cidr"],
             "source_mode": network["source_mode"],
+            "target_mode": network["target_mode"],
+            "unicast_target": network["unicast_target"],
             "directed_broadcast": network["directed_broadcast"],
             "multicast_target": network["multicast_target"],
             "udp_port": network["udp_port"],
@@ -800,5 +1186,10 @@ class VenstarRuntime:
             "pairing_until": self._pairing_until.isoformat()
             if self._pairing_until
             else None,
+            "last_packet": self._packet_diagnostics(self._last_packet),
+            "last_send": self._send_diagnostics(),
+            "last_send_status": self._send_status(self._last_send_result),
+            "packets_generated_since_start": self._packets_generated_since_start,
+            "udp_packets_sent_since_start": self._udp_packets_sent_since_start,
         }
         return data

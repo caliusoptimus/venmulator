@@ -12,7 +12,8 @@ if TYPE_CHECKING:
 DOMAIN: Final = "venstar_emulator"
 
 CONF_SOURCE_INTERFACE: Final = "source_interface"
-CONF_SOURCE_IP: Final = "source_ip"
+CONF_TARGET_MODE: Final = "target_mode"
+CONF_UNICAST_TARGET: Final = "unicast_target"
 CONF_UNIT_ID: Final = "unit_id"
 CONF_SENSOR_TYPE: Final = "sensor_type"
 CONF_SENSOR_NAME: Final = "sensor_name"
@@ -25,16 +26,22 @@ CONF_START_SEQUENCE: Final = "start_sequence"
 
 DEFAULT_NAME: Final = "WiFi Sensor Emulator for Venstar"
 DEFAULT_SOURCE_INTERFACE: Final = ""
-DEFAULT_SOURCE_IP: Final = ""
+DEFAULT_TARGET_MODE: Final = "auto"
+DEFAULT_UNICAST_TARGET: Final = ""
 DEFAULT_SENSOR_NAME: Final = "HASensor"
 DEFAULT_SENSOR_TYPE: Final = "remote"
 DEFAULT_TEMPERATURE_UNIT: Final = "fahrenheit"
 DEFAULT_UNIT_ID: Final = 1
 DEFAULT_UPDATE_INTERVAL_SEC: Final = 30
+MIN_UPDATE_INTERVAL_SEC: Final = 15
+MAX_UPDATE_INTERVAL_SEC: Final = 300
 DEFAULT_PAIRING_WINDOW_SEC: Final = 300
 DEFAULT_BATTERY_PERCENT: Final = 100
 DEFAULT_START_SEQUENCE: Final = 3
 MAX_SEQUENCE: Final = 0xFFFF
+TARGET_MODE_AUTO: Final = "auto"
+TARGET_MODE_UNICAST: Final = "unicast"
+TARGET_MODES: Final = {TARGET_MODE_AUTO, TARGET_MODE_UNICAST}
 
 STORAGE_VERSION: Final = 1
 
