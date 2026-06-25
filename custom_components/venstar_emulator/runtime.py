@@ -9,6 +9,7 @@ import logging
 import random
 import secrets
 import socket
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -125,6 +126,8 @@ class VenstarRuntime:
     LEGACY_CONF_SOURCE_IP = "source_ip"
     VENSTAR_MULTICAST_TARGET = "224.0.0.1"
     VENSTAR_UDP_PORT = 5001
+    VENSTAR_BURST_REPEAT_COUNT = 12
+    VENSTAR_BURST_PACKET_DELAY_SEC = 0.005
     PERIODIC_FAILURE_LOG_INTERVAL_SEC = 60
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -308,6 +311,11 @@ class VenstarRuntime:
             "set_multicast_interface": self._last_send_result.get(
                 "set_multicast_interface"
             ),
+            "burst_repeat_count": self._last_send_result.get("burst_repeat_count"),
+            "burst_packet_delay_ms": self._last_send_result.get(
+                "burst_packet_delay_ms"
+            ),
+            "logical_target_count": self._last_send_result.get("logical_target_count"),
             "targets": self._last_send_result.get("targets"),
         }
 
@@ -810,13 +818,7 @@ class VenstarRuntime:
                     }
                 )
         else:
-            targets = [
-                {
-                    "address": self.VENSTAR_MULTICAST_TARGET,
-                    "port": self.VENSTAR_UDP_PORT,
-                    "kind": "multicast",
-                }
-            ]
+            targets = []
             if (
                 directed_broadcast
                 and directed_broadcast != self.VENSTAR_MULTICAST_TARGET
@@ -828,6 +830,13 @@ class VenstarRuntime:
                         "kind": "directed_broadcast",
                     }
                 )
+            targets.append(
+                {
+                    "address": self.VENSTAR_MULTICAST_TARGET,
+                    "port": self.VENSTAR_UDP_PORT,
+                    "kind": "multicast",
+                }
+            )
 
         return {
             "source_interface": source_interface,
@@ -865,6 +874,21 @@ class VenstarRuntime:
         targets = network.get("targets")
         if not isinstance(targets, list):
             targets = []
+        repeat_count = VenstarRuntime.VENSTAR_BURST_REPEAT_COUNT
+        packet_delay_sec = VenstarRuntime.VENSTAR_BURST_PACKET_DELAY_SEC
+
+        valid_target_count = 0
+        for target in targets:
+            address = str(target.get("address", "")).strip()
+            port_raw = target.get("port")
+            try:
+                port = int(port_raw)
+            except (TypeError, ValueError):
+                port = 0
+            if address and port > 0:
+                valid_target_count += 1
+        total_send_attempts = valid_target_count * repeat_count
+        send_attempt_index = 0
 
         result: dict[str, Any] = {
             "source_ip": source_ip,
@@ -873,6 +897,9 @@ class VenstarRuntime:
             "bind_source_ip": "skipped",
             "bind_interface": "skipped",
             "set_multicast_interface": "skipped",
+            "burst_repeat_count": repeat_count,
+            "burst_packet_delay_ms": packet_delay_sec * 1000,
+            "logical_target_count": len(targets),
             "targets": [],
             "sent_count": 0,
         }
@@ -930,31 +957,51 @@ class VenstarRuntime:
                             "port": port,
                             "kind": kind,
                             "status": "invalid_target",
+                            "attempts": 0,
+                            "sent_count": 0,
                         }
                     )
                     continue
 
-                try:
-                    sent_bytes = sock.sendto(payload, (address, port))
-                    result["targets"].append(
-                        {
-                            "address": address,
-                            "port": port,
-                            "kind": kind,
-                            "status": "sent",
-                            "bytes": sent_bytes,
-                        }
-                    )
-                    result["sent_count"] = int(result["sent_count"]) + 1
-                except OSError as err:
-                    result["targets"].append(
-                        {
-                            "address": address,
-                            "port": port,
-                            "kind": kind,
-                            "status": f"error:{err}",
-                        }
-                    )
+                success_count = 0
+                total_bytes = 0
+                last_error: OSError | None = None
+                for _ in range(repeat_count):
+                    try:
+                        sent_bytes = sock.sendto(payload, (address, port))
+                    except OSError as err:
+                        last_error = err
+                    else:
+                        success_count += 1
+                        total_bytes += sent_bytes
+                    send_attempt_index += 1
+                    if send_attempt_index < total_send_attempts:
+                        time.sleep(packet_delay_sec)
+
+                result["sent_count"] = int(result["sent_count"]) + success_count
+                if success_count == repeat_count:
+                    status = "sent"
+                elif success_count > 0:
+                    status = "partial"
+                elif last_error is not None:
+                    status = f"error:{last_error}"
+                else:
+                    status = "not_sent"
+
+                target_result: dict[str, Any] = {
+                    "address": address,
+                    "port": port,
+                    "kind": kind,
+                    "status": status,
+                    "attempts": repeat_count,
+                    "sent_count": success_count,
+                }
+                if success_count:
+                    target_result["bytes_per_packet"] = len(payload)
+                    target_result["total_bytes"] = total_bytes
+                if last_error is not None:
+                    target_result["last_error"] = str(last_error)
+                result["targets"].append(target_result)
 
         return result
 
@@ -981,8 +1028,9 @@ class VenstarRuntime:
         _LOGGER.debug(
             "Sent %s packet for entry %s: message_type=%s, sequence=%s, "
             "temperature_c=%s, temperature_index=%s, battery=%s, "
-            "target_mode=%s, source_ip=%s, sent_count=%s, targets=%s, "
-            "bind_source_ip=%s, bind_interface=%s, multicast_if=%s",
+            "target_mode=%s, source_ip=%s, sent_count=%s, burst_repeats=%s, "
+            "burst_delay_ms=%s, targets=%s, bind_source_ip=%s, "
+            "bind_interface=%s, multicast_if=%s",
             pkt.stage,
             self.entry.entry_id,
             pkt.message_type,
@@ -993,6 +1041,8 @@ class VenstarRuntime:
             network.get("target_mode"),
             result.get("source_ip"),
             sent_count,
+            result.get("burst_repeat_count"),
+            result.get("burst_packet_delay_ms"),
             self._target_summary(result.get("targets")),
             result.get("bind_source_ip"),
             result.get("bind_interface"),
