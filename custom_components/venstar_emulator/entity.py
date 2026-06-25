@@ -23,7 +23,7 @@ class VenstarBaseEntity(CoordinatorEntity):
             name=entry.title,
             manufacturer="Home Assistant",
             model="WiFi Sensor Emulator for Venstar",
-            sw_version="1.10.0",
+            sw_version="1.11.0",
         )
 
     @property
